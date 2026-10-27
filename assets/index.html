@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jnb</title>
+<link rel="stylesheet" href="/assets/codemirror.min.css">
+<script src="/assets/codemirror.min.js"></script>
+<script src="/assets/julia.min.js"></script>
+<script src="/assets/matchbrackets.min.js"></script>
+<script src="/assets/comment.min.js"></script>
+<style>
+:root {
+  --bg: #fafafa; --panel: #ffffff; --border: #e2e2e2; --text: #1d1d1f; --muted: #7a7a80;
+  --accent: #3b6fd8; --running: #c98a00; --error-bg: #fdecec; --error: #b3261e; --ok: #2e7d32;
+  --code-bg: #ffffff; --out-bg: #f4f4f5;
+  --kw: #8a3ffc; --str: #1a7f37; --num: #b35900; --com: #8b8b93; --def: #0a5cc2; --builtin: #9e4f00;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18181b; --panel: #1f1f23; --border: #34343a; --text: #e6e6e9; --muted: #8e8e96;
+    --accent: #7aa2f7; --running: #e0af68; --error-bg: #3a1f22; --error: #f7768e; --ok: #9ece6a;
+    --code-bg: #1f1f23; --out-bg: #232328;
+    --kw: #bb9af7; --str: #9ece6a; --num: #ff9e64; --com: #6b6b75; --def: #7aa2f7; --builtin: #e0af68;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px;
+         padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+header .name { font-weight: 600; }
+header .dirty { color: var(--running); visibility: hidden; }
+header .dirty.on { visibility: visible; }
+header .status { color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+header .status.error { color: var(--error); }
+button { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--border);
+         border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.4; cursor: default; }
+#btn-stop:not(:disabled) { border-color: var(--running); color: var(--running); }
+main { max-width: 1100px; margin: 0 auto; padding: 16px 16px 50vh; }
+.cell { display: grid; grid-template-columns: 52px 1fr; gap: 0 8px; margin-bottom: 14px; }
+.gutter { text-align: right; padding-top: 6px; color: var(--muted); font: 12px ui-monospace, Menlo, monospace; }
+.cell.running .gutter { color: var(--running); }
+.cell.failed .gutter { color: var(--error); }
+.box { position: relative; border: 1px solid var(--border); border-radius: 6px; background: var(--code-bg); }
+.cell.active .box { border-color: var(--accent); }
+.tools { position: absolute; top: 4px; right: 6px; z-index: 5; display: flex; gap: 4px; opacity: 0; }
+.cell:hover .tools, .cell.active .tools { opacity: 1; }
+.tools button { padding: 0 7px; font-size: 12px; background: var(--panel); }
+.CodeMirror { height: auto; background: transparent; color: var(--text); border-radius: 6px;
+              font: 13px/1.5 ui-monospace, Menlo, monospace; padding: 4px 0; }
+.CodeMirror-cursor { border-left-color: var(--text); }
+.CodeMirror-selected, .CodeMirror-focused .CodeMirror-selected { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+.CodeMirror-matchingbracket { color: var(--ok) !important; text-decoration: underline; }
+.cm-keyword { color: var(--kw); } .cm-string, .cm-string-2 { color: var(--str); }
+.cm-number, .cm-atom { color: var(--num); } .cm-comment { color: var(--com); font-style: italic; }
+.cm-def, .cm-variable-2 { color: var(--def); } .cm-builtin, .cm-meta { color: var(--builtin); }
+.cm-variable, .cm-operator, .cm-bracket { color: var(--text); }
+.output { grid-column: 2; }
+.output:empty { display: none; }
+.output > * { margin: 6px 0 0; }
+.output pre { margin: 6px 0 0; padding: 6px 10px; background: var(--out-bg); border-radius: 6px;
+              font: 12.5px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word;
+              max-height: 480px; overflow: auto; }
+.output pre.error { background: var(--error-bg); color: var(--error); }
+.output img { max-width: 100%; background: #fff; border-radius: 6px; }
+.output .html { overflow-x: auto; }
+.output .html table { border-collapse: collapse; font-size: 12.5px; }
+.output .html td, .output .html th { border: 1px solid var(--border); padding: 2px 6px; }
+.output .time { color: var(--muted); font-size: 11px; }
+.help { color: var(--muted); font-size: 12px; text-align: center; }
+kbd { font: 11px ui-monospace, Menlo, monospace; border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
+@media (max-width: 600px) { .cell { grid-template-columns: 1fr; } .gutter { text-align: left; } .output { grid-column: 1; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="name" id="name">jnb</span><span class="dirty" id="dirty" title="unsaved changes">●</span>
+  <span class="status" id="status">loading…</span>
+  <button id="btn-runall" title="Run every cell from the top, stopping at the first error">Run all</button>
+  <button id="btn-stop" title="Interrupt the running cell (Cmd/Ctrl-.)" disabled>Stop</button>
+  <button id="btn-restart" title="Start a fresh Julia session: clears all variables and loaded packages">Restart</button>
+  <button id="btn-reload" title="Re-read the file from disk">Reload</button>
+  <button id="btn-save" title="Save (Cmd/Ctrl-.)">Save</button>
+</header>
+<main id="cells"></main>
+<p class="help"><kbd>Shift-Enter</kbd> run and move on · <kbd>Cmd-Enter</kbd> run in place ·
+  <kbd>Cmd-.</kbd> stop · <kbd>Cmd-/</kbd> comment · end a cell with <kbd>;</kbd> to hide its value ·
+  edits save automatically</p>
+
+<script>
+const TOKEN = "__TOKEN__";
+const $ = id => document.getElementById(id);
+let cells = [];          // [{el, cm, out, gutter}]
+let active = null;
+let dirty = false;
+let execCount = 0;
+let queue = Promise.resolve();
+let runEpoch = 0;        // bumped on failure, Stop or Restart: cells queued earlier are skipped
+let conflict = false;    // the file changed on disk under us: autosave pauses until resolved
+let saveTimer = null;
+
+async function api(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "X-Jnb-Token": TOKEN, "Content-Type": "application/json" },
+                                body: body === undefined ? "" : JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  return { status: r.status, data };
+}
+
+function setStatus(text, isError = false) { const s = $("status"); s.textContent = text; s.classList.toggle("error", isError); }
+// Any edit marks the notebook dirty and saves it a second after typing stops.
+function setDirty(on) {
+  dirty = on; $("dirty").classList.toggle("on", on);
+  clearTimeout(saveTimer);
+  if (on && !conflict) saveTimer = setTimeout(() => save(), 1000);
+}
+
+// ---------- building cells ----------
+function makeCell(text, index) {
+  const el = document.createElement("div"); el.className = "cell";
+  const gutter = document.createElement("div"); gutter.className = "gutter"; gutter.textContent = "[ ]";
+  const box = document.createElement("div"); box.className = "box";
+  const tools = document.createElement("div"); tools.className = "tools";
+  const out = document.createElement("div"); out.className = "output";
+  el.append(gutter, box, out);
+  box.append(tools);
+
+  const cm = CodeMirror(box, {
+    value: text, mode: "julia", lineNumbers: false, matchBrackets: true, indentUnit: 4,
+    viewportMargin: Infinity, lineWrapping: false,
+    extraKeys: {
+      "Shift-Enter": () => runAndAdvance(cell),
+      "Cmd-Enter": () => enqueue(cell), "Ctrl-Enter": () => enqueue(cell),
+      "Cmd-S": () => save(), "Ctrl-S": () => save(),
+      "Cmd-/": "toggleComment", "Ctrl-/": "toggleComment",
+      "Tab": c => c.somethingSelected() ? c.indentSelection("add") : c.replaceSelection("    "),
+      "Up": c => moveFrom(c, -1), "Down": c => moveFrom(c, 1),
+    },
+  });
+  const cell = { el, cm, out, gutter };
+  cm.on("change", () => setDirty(true));
+  cm.on("focus", () => setActive(cell));
+
+  for (const [label, title, fn] of [["▶", "Run (Cmd-Enter)", () => enqueue(cell)],
+                                    ["+", "Add a cell below", () => addCellAfter(cell)],
+                                    ["✕", "Delete this cell", () => deleteCell(cell)]]) {
+    const b = document.createElement("button"); b.textContent = label; b.title = title;
+    b.onclick = e => { e.stopPropagation(); fn(); };
+    tools.append(b);
+  }
+  return cell;
+}
+
+// Arrow keys at the top/bottom edge of a cell move into the neighbouring cell.
+function moveFrom(cm, dir) {
+  const i = cells.findIndex(c => c.cm === cm), pos = cm.getCursor();
+  const atEdge = dir < 0 ? pos.line === 0 : pos.line === cm.lastLine();
+  const next = cells[i + dir];
+  if (!atEdge || !next) return CodeMirror.Pass;
+  next.cm.focus();
+  next.cm.setCursor(dir < 0 ? { line: next.cm.lastLine(), ch: pos.ch } : { line: 0, ch: pos.ch });
+}
+
+function setActive(cell) {
+  if (active) active.el.classList.remove("active");
+  active = cell; cell.el.classList.add("active");
+}
+
+function render(texts) {
+  const main = $("cells"); main.innerHTML = ""; cells = [];
+  texts.forEach((t, i) => { const c = makeCell(t, i); cells.push(c); main.append(c.el); c.cm.refresh(); });
+  setDirty(false);
+}
+
+function addCellAfter(cell) {
+  const i = cells.indexOf(cell);
+  const c = makeCell("# %%\n", i + 1);
+  cells.splice(i + 1, 0, c);
+  cell.el.after(c.el); c.cm.refresh();
+  c.cm.focus(); c.cm.setCursor({ line: 1, ch: 0 });
+  setDirty(true);
+  return c;
+}
+
+function deleteCell(cell) {
+  if (cells.length === 1) { cell.cm.setValue(""); return; }
+  const i = cells.indexOf(cell);
+  cells.splice(i, 1); cell.el.remove();
+  (cells[i] || cells[i - 1]).cm.focus();
+  setDirty(true);
+}
+
+// The line in the file where each cell starts, so errors report real line numbers.
+function firstLine(cell) {
+  let line = 1;
+  for (const c of cells) { if (c === cell) return line; line += c.cm.lineCount(); }
+  return line;
+}
+
+// ---------- running ----------
+function escapeText(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+function showItem(out, item) {
+  if (!item) return;
+  if (item.kind === "png") { const img = new Image(); img.src = "data:image/png;base64," + item.data; out.append(img); }
+  else if (item.kind === "html") { const d = document.createElement("div"); d.className = "html"; d.innerHTML = item.data; out.append(d); }
+  else { const p = document.createElement("pre"); if (item.kind === "error") p.className = "error"; p.textContent = item.data; out.append(p); }
+}
+
+function showError(out, text) {
+  const p = document.createElement("pre"); p.className = "error"; p.textContent = text; out.append(p);
+}
+
+// Run a cell. The server answers with one JSON line per event as the cell runs: printed
+// text ("out"), a display(...) call, then "done" (or "died" if the worker went away).
+async function runCell(cell, epoch) {
+  if (!cells.includes(cell)) return true;
+  if (epoch !== runEpoch) { cell.gutter.textContent = "[ ]"; return false; }   // cancelled while queued
+  cell.el.classList.remove("failed"); cell.el.classList.add("running");
+  cell.gutter.textContent = "[*]";
+  const n = cells.indexOf(cell);
+  setStatus(`running cell ${n + 1}…`);
+  runId++;
+  $("btn-stop").disabled = false;
+  cell.out.innerHTML = "";
+
+  let pre = null, ok = true, finished = false;
+  const handle = ev => {
+    if (ev.kind === "out") {
+      if (!pre) { pre = document.createElement("pre"); cell.out.append(pre); }
+      const follow = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+      pre.append(ev.text);
+      if (follow) pre.scrollTop = pre.scrollHeight;       // keep long output scrolled to the end
+    } else if (ev.kind === "display") {
+      showItem(cell.out, ev.item);
+      pre = null;                                         // later text goes below the plot
+    } else if (ev.kind === "done") {
+      finished = true;
+      showItem(cell.out, ev.value);
+      if (ev.error) { ok = false; showError(cell.out, ev.error); }
+      if (ev.seconds >= 1) {
+        const t = document.createElement("div"); t.className = "time"; t.textContent = `${ev.seconds} s`; cell.out.append(t);
+      }
+    } else if (ev.kind === "died") {
+      finished = true; ok = false; showError(cell.out, ev.text);
+    }
+  };
+
+  try {
+    const r = await fetch("/api/run", { method: "POST", body: JSON.stringify({ code: cell.cm.getValue(), line: firstLine(cell) }),
+                                         headers: { "X-Jnb-Token": TOKEN, "Content-Type": "application/json" } });
+    if (!r.ok) throw new Error(`server said ${r.status}`);
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (line) handle(JSON.parse(line));
+      }
+    }
+    if (!finished) handle({ kind: "died", text: "lost connection to the jnb server" });
+  } catch (e) {
+    handle({ kind: "died", text: "lost connection to the jnb server: " + e.message });
+  }
+
+  cell.el.classList.remove("running");
+  if (!ok) cell.el.classList.add("failed");
+  cell.gutter.textContent = `[${++execCount}]`;
+  runId++;
+  resetStopButton();
+  if (!ok) runEpoch++;                                    // don't run cells queued behind a failure
+  setStatus(ok ? `cell ${n + 1} done` : `cell ${n + 1} failed`, !ok);
+  return ok;
+}
+
+// Cells run one after another, in the order they were asked for.
+function enqueue(cell) {
+  const epoch = runEpoch;
+  if (!cell.el.classList.contains("running")) cell.gutter.textContent = "[…]";
+  const p = queue.then(() => runCell(cell, epoch));
+  queue = p.catch(() => {});
+  return p;
+}
+
+// Stop sends an interrupt. Code that never allocates (a tight numeric loop) does not notice
+// interrupts, so if the cell is still running after 3 s, Stop becomes Force stop: a restart.
+let runId = 0, stopState = null;                          // null | "sent" | "force"
+function stop() {
+  if ($("btn-stop").disabled) return;
+  if (stopState === "force") return $("btn-restart").onclick();
+  if (stopState === "sent") return;
+  stopState = "sent";
+  api("/api/stop");
+  const id = runId;
+  setTimeout(() => {
+    if (id !== runId || stopState !== "sent") return;     // it stopped in time
+    stopState = "force";
+    $("btn-stop").textContent = "Force stop";
+    $("btn-stop").title = "The cell is not responding to Stop. This restarts Julia: all variables are lost.";
+    setStatus("the cell is not responding to Stop (a loop that never checks for interrupts); Force stop restarts Julia", true);
+  }, 3000);
+}
+function resetStopButton() {
+  stopState = null;
+  $("btn-stop").textContent = "Stop";
+  $("btn-stop").title = "Interrupt the running cell (Cmd/Ctrl-.)";
+  $("btn-stop").disabled = true;
+}
+
+function runAndAdvance(cell) {
+  enqueue(cell);
+  const i = cells.indexOf(cell);
+  const next = cells[i + 1] || addCellAfter(cell);
+  next.cm.focus();
+}
+
+async function runAll() {
+  for (const c of [...cells]) { if (!(await enqueue(c))) return; }
+  setStatus("all cells done");
+}
+
+// ---------- file ----------
+async function load() {
+  const { status, data } = await api("/api/load");
+  if (status !== 200) { setStatus("could not load the file", true); return; }
+  $("name").textContent = data.name; document.title = data.name + " · jnb";
+  conflict = false;
+  render(data.cells);
+  setStatus(data.path);
+}
+
+async function save(force = false) {
+  if (conflict && !force) return;
+  const { status, data } = await api("/api/save", { cells: cells.map(c => c.cm.getValue()), force });
+  if (status === 200) { conflict = false; setDirty(false); setStatus("saved"); return; }
+  if (status === 409) {
+    conflict = true;
+    setStatus("the file changed on disk since it was loaded: Reload to take that version, or click Save again to overwrite it", true);
+    $("btn-save").onclick = () => { $("btn-save").onclick = () => save(); save(true); };
+    return;
+  }
+  setStatus("save failed", true);
+}
+
+$("btn-save").onclick = () => save();
+$("btn-reload").onclick = () => {
+  if (!dirty) return load();
+  setStatus("you have unsaved edits: click Reload again to discard them", true);
+  $("btn-reload").onclick = () => { $("btn-reload").onclick = reloadClick; load(); };
+};
+const reloadClick = $("btn-reload").onclick;
+$("btn-runall").onclick = () => runAll();
+$("btn-stop").onclick = () => stop();
+$("btn-restart").onclick = async () => {
+  runEpoch++;                                             // drop anything still queued
+  setStatus("restarting Julia…");
+  await api("/api/restart");
+  await queue;                                            // a cell that was running has now ended
+  execCount = 0;
+  cells.forEach(c => { c.gutter.textContent = "[ ]"; c.el.classList.remove("failed"); });
+  setStatus("restarted: a fresh Julia session, nothing defined or loaded");
+};
+document.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === ".") { e.preventDefault(); stop(); }
+});
+// Only warn on leaving when edits could really be lost: the file changed elsewhere, so
+// they cannot be saved without overwriting that change. Otherwise closing is silent.
+window.addEventListener("beforeunload", e => { if (dirty && conflict) { e.preventDefault(); e.returnValue = ""; } });
+
+// Closing the window shuts the server down, saving any last edits on the way out.
+// keepalive lets the request finish after the page is gone.
+window.addEventListener("pagehide", () => {
+  const body = JSON.stringify({ cells: dirty && !conflict ? cells.map(c => c.cm.getValue()) : null });
+  fetch("/api/bye", { method: "POST", keepalive: true, body,
+                      headers: { "X-Jnb-Token": TOKEN, "Content-Type": "application/json" } });
+});
+
+load();
+</script>
+</body>
+</html>

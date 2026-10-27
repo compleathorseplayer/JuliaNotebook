@@ -1,0 +1,16 @@
+#!/bin/sh
+# jnb FILE.jl [PORT] — open a Julia file with `# %%` cells as a notebook in the browser.
+# The server runs in the app's own environment (the Project.toml in the app folder);
+# notebook code runs in a separate Julia that uses the notebook folder's environment or
+# your default one.
+
+# Find the app folder, following symlinks (e.g. ~/.local/bin/jnb -> <app>/bin/jnb).
+src=$0
+while [ -L "$src" ]; do
+    dir=$(cd -P "$(dirname "$src")" && pwd)
+    src=$(readlink "$src")
+    case $src in /*) ;; *) src=$dir/$src ;; esac
+done
+app=$(cd -P "$(dirname "$src")/.." && pwd)
+
+exec julia --startup-file=no --project="$app" "$app/src/main.jl" "$@"
