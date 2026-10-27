@@ -12,6 +12,8 @@ an editor per cell, a run button, and the output. If your code is increasingly w
 AI agent of your own choosing, what you need from a notebook is to read it, run it and look
 at the results, and that is all this does.
 
+Why it exists, and who it's for: [Julia Notebook: a notebook that gets out of your way](https://medium.com/@compleathorseplayer/julia-notebook-a-notebook-that-gets-out-of-your-way-91bdee59a4fa) (Medium).
+
 ## What it does
 
 - **Cells from plain text.** Every line starting with `# %%` begins a new cell (the same
