@@ -220,13 +220,13 @@ async function runCell(cell, epoch) {
   if (epoch !== runEpoch) { cell.gutter.textContent = "[ ]"; return false; }   // cancelled while queued
   cell.el.classList.remove("failed"); cell.el.classList.add("running");
   cell.gutter.textContent = "[*]";
-  const n = cells.indexOf(cell);
-  setStatus(`running cell ${n + 1}…`);
+  const name = cellName(cell);
+  setStatus(`running ${name}…`);
   runId++;
   $("btn-stop").disabled = false;
   cell.out.innerHTML = "";
 
-  let pre = null, ok = true, finished = false;
+  let pre = null, ok = true, finished = false, stopped = false;
   const handle = ev => {
     if (ev.kind === "out") {
       if (!pre) { pre = document.createElement("pre"); cell.out.append(pre); }
@@ -239,7 +239,7 @@ async function runCell(cell, epoch) {
     } else if (ev.kind === "done") {
       finished = true;
       showItem(cell.out, ev.value);
-      if (ev.error) { ok = false; showError(cell.out, ev.error); }
+      if (ev.error) { ok = false; stopped = ev.error === "Interrupted."; showError(cell.out, ev.error); }
       if (ev.seconds >= 1) {
         const t = document.createElement("div"); t.className = "time"; t.textContent = `${ev.seconds} s`; cell.out.append(t);
       }
@@ -275,8 +275,14 @@ async function runCell(cell, epoch) {
   runId++;
   resetStopButton();
   if (!ok) runEpoch++;                                    // don't run cells queued behind a failure
-  setStatus(ok ? `cell ${n + 1} done` : `cell ${n + 1} failed`, !ok);
+  setStatus(ok ? `${name} done` : stopped ? `${name} stopped` : `${name} failed`, !ok && !stopped);
   return ok;
+}
+
+// A cell's name for the status line: its title from the `# %% Title` line, else its number.
+function cellName(cell) {
+  const m = cell.cm.getLine(0).match(/^# %%\s*(.*)$/);
+  return m && m[1].trim() ? `“${m[1].trim()}”` : `cell ${cells.indexOf(cell) + 1}`;
 }
 
 // Cells run one after another, in the order they were asked for.
@@ -338,7 +344,11 @@ async function load() {
 async function save(force = false) {
   if (conflict && !force) return;
   const { status, data } = await api("/api/save", { cells: cells.map(c => c.cm.getValue()), force });
-  if (status === 200) { conflict = false; setDirty(false); setStatus("saved"); return; }
+  if (status === 200) {
+    conflict = false; setDirty(false);
+    if ($("btn-stop").disabled) setStatus("saved");       // don't hide "running …" while a cell runs
+    return;
+  }
   if (status === 409) {
     conflict = true;
     setStatus("the file changed on disk since it was loaded: Reload to take that version, or click Save again to overwrite it", true);

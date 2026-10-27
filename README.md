@@ -5,6 +5,8 @@ into cells at `# %%` lines, and lets you run them one at a time and see the outp
 the way Jupyter does. The file stays a normal Julia script that any editor, `include`, or git
 can use.
 
+![Julia Notebook running a short demo: cells with printed output and a plot](docs/screenshot.jpg)
+
 There is no account to log into, no AI assistant, no code completion and no plugin system:
 an editor per cell, a run button, and the output. If your code is increasingly written by an
 AI agent of your own choosing, what you need from a notebook is to read it, run it and look
