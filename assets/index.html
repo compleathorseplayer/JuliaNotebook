@@ -9,6 +9,8 @@
 <script src="/assets/julia.min.js"></script>
 <script src="/assets/matchbrackets.min.js"></script>
 <script src="/assets/comment.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
 <style>
 :root {
   --bg: #fafafa; --panel: #ffffff; --border: #e2e2e2; --text: #1d1d1f; --muted: #7a7a80;
@@ -67,6 +69,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 16px 16px 50vh; }
 .output pre.error { background: var(--error-bg); color: var(--error); }
 .output img { max-width: 100%; background: #fff; border-radius: 6px; }
 .output .html { overflow-x: auto; }
+.output .latex { overflow-x: auto; padding: 0.25em 0; }
 .output .html table { border-collapse: collapse; font-size: 12.5px; }
 .output .html td, .output .html th { border: 1px solid var(--border); padding: 2px 6px; }
 .output .time { color: var(--muted); font-size: 11px; }
@@ -206,7 +209,24 @@ function showItem(out, item) {
   if (!item) return;
   if (item.kind === "png") { const img = new Image(); img.src = "data:image/png;base64," + item.data; out.append(img); }
   else if (item.kind === "html") { const d = document.createElement("div"); d.className = "html"; d.innerHTML = item.data; out.append(d); }
+  else if (item.kind === "latex") {
+    if (!showLatex(out, item)) { const p = document.createElement("pre"); p.textContent = item.text; out.append(p); }
+  }
   else { const p = document.createElement("pre"); if (item.kind === "error") p.className = "error"; p.textContent = item.data; out.append(p); }
+}
+
+// text/latex output typeset with KaTeX, the $…$ or $$…$$ delimiters removed; false when
+// KaTeX is not loaded (offline, say) or cannot typeset it, and the plain text is shown
+function showLatex(out, item) {
+  if (!window.katex) return false;
+  let s = item.data.trim();
+  const m = s.match(/^\$\$([\s\S]*)\$\$$/) || s.match(/^\$([\s\S]*)\$$/);
+  if (m) s = m[1];
+  const d = document.createElement("div"); d.className = "latex";
+  try { katex.render(s, d, { displayMode: true, throwOnError: true }); }
+  catch (e) { return false; }
+  out.append(d);
+  return true;
 }
 
 function showError(out, text) {
