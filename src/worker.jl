@@ -36,6 +36,9 @@ function render(x)
         showable("image/png", x) &&
             return (kind = "png", data = base64encode(repr(MIME("image/png"), x)))
         showable("text/html", x) && return (kind = "html", data = show_as("text/html", x))
+        # typeset by the page (KaTeX); the plain text goes along in case it cannot be
+        showable("text/latex", x) &&
+            return (kind = "latex", data = show_as("text/latex", x), text = show_as("text/plain", x))
         return (kind = "text", data = show_as("text/plain", x))
     catch e
         return (kind = "error", data = "error while displaying value: " * sprint(showerror, e))
